@@ -1,4 +1,3 @@
-from msilib import sequence
 import pickle
 import glob
 import os

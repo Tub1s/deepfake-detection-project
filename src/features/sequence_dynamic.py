@@ -6,50 +6,73 @@ from PIL import Image
 import pickle
 from pathlib import Path
 import copy
+import cv2 as cv
 
 NUM_CHANNELS = 3
 
 #Read image as a numpy array
-def read_image(path):
-    image = Image.open(path)
-    return np.asarray(image)
+def read_image(path: str) -> np.ndarray:
+    return 
 
 #Create histogram from an image
 #! Add custom number of bins support in future
-def get_histograms(image):
+def get_histograms(image: np.ndarray, bins: int=256) -> np.ndarray:
     histograms = list()
     for channel in range(image.shape[2]):
         histogram, bin_edges = np.histogram(
-            image[:, :, channel], bins=256, range=(0, 256)
+            image[:, :, channel], bins=bins, range=(0, 256)
         )
         histogram = [i/sum(histogram) for i in histogram]
         histograms.append(histogram)
 
     return histograms
 
-#Calculate average distance for pairs of frames
-def get_avg_distance(main_path, list_of_images):
-    cache = dict()
-    distances = list()
-    for i in range(len(list_of_images) - 1):
-        if not cache.keys():
-            cache[i] = read_image(f"{main_path}{str(list_of_images[i])}.png")
-            cache[i+1] = read_image(f"{main_path}{str(list_of_images[i+1])}.png")
 
-        if str(i+1) not in cache.keys():
-            cache[i+1] = read_image(f"{main_path}{str(list_of_images[i+1])}.png")
+#TODO: Add exception handling
+def generate_histogram(path: str) -> np.ndarray:
+    """
+    Generates array of histograms of pixel frequency for a given input image.
 
-        histogram_1 = get_histograms(cache[i])
-        histogram_2 = get_histograms(cache[i+1])
-        
-        avg_distance = 0.0
-        for j in range(NUM_CHANNELS):
-            avg_distance += (wasserstein_distance(histogram_1[j], histogram_2[j]))/NUM_CHANNELS
+    Args:
+        path (str): Path to the image.
 
-        del cache[i]
-        distances.append(avg_distance)
+    Returns:
+        np.ndarray: Three dimensional array containing pixel value frequencies
+        for separate channels in RGB format.
+    """    
+    image = cv.imread(path)
+
+    bins = 256 # Equal to the number of possible pixel values
+    histRange = (0, 256)
+    accumulate = False
     
-    return distances
+    n_channels = image.shape[2]
+
+    if not (n_channels == 1) or (n_channels == 3):
+        raise Exception("Incorrect number of channels in image. \
+                         Single or triple channel image required.")
+
+
+    # Grayscale image case
+    if not n_channels == 3:
+        hist = np.ravel(cv.calcHist(image, [0], None, [bins], histRange, accumulate=accumulate))
+        return hist/hist.sum()
+
+
+    # Color image case
+    bgr_planes = cv.split(image)
+    
+    # Calculating histograms for separate channels
+    b_hist = np.ravel(cv.calcHist(bgr_planes, [0], None, [bins], histRange, accumulate=accumulate))
+    g_hist = np.ravel(cv.calcHist(bgr_planes, [1], None, [bins], histRange, accumulate=accumulate))
+    r_hist = np.ravel(cv.calcHist(bgr_planes, [2], None, [bins], histRange, accumulate=accumulate))
+    
+    # Converting counts to frequencies
+    b_hist = b_hist/b_hist.sum()
+    g_hist = g_hist/g_hist.sum()
+    r_hist = r_hist/r_hist.sum()
+        
+    return np.array([r_hist, g_hist, b_hist])
 
 #Calculate average Wasserstein distance for sequence of images
 def get_avg_distance_seq(main_path, list_of_images, seq_len):
@@ -58,7 +81,7 @@ def get_avg_distance_seq(main_path, list_of_images, seq_len):
     distances = list()
 
     if seq_len < 2:
-        print("Sequence length has to be greater or equal 2")
+        print("Sequence length has to be greater or equal to 2")
         return
 
     for i in range(len(list_of_images) - seq_len + 1):
@@ -143,7 +166,7 @@ def save_avg_distance_seq(seq_len, main_path):
         pickle.dump(idx_paths_pairs, f)
 
 
-# calculate the kl divergence (is not symmetrical)
+# calculate the kl divergence (is not symmetrical) requires non-zero inputs in distributions
 def kl_divergence(p, q):
     return sum(p[i] * math.log2(p[i]/q[i]) for i in range(len(p)))
  
