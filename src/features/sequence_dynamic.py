@@ -7,26 +7,7 @@ import pickle
 from pathlib import Path
 import copy
 import cv2 as cv
-
-NUM_CHANNELS = 3
-
-#Read image as a numpy array
-def read_image(path: str) -> np.ndarray:
-    return 
-
-#Create histogram from an image
-#! Add custom number of bins support in future
-def get_histograms(image: np.ndarray, bins: int=256) -> np.ndarray:
-    histograms = list()
-    for channel in range(image.shape[2]):
-        histogram, bin_edges = np.histogram(
-            image[:, :, channel], bins=bins, range=(0, 256)
-        )
-        histogram = [i/sum(histogram) for i in histogram]
-        histograms.append(histogram)
-
-    return histograms
-
+from typing import List
 
 #TODO: Add exception handling
 def generate_histogram(path: str) -> np.ndarray:
@@ -74,52 +55,44 @@ def generate_histogram(path: str) -> np.ndarray:
         
     return np.array([r_hist, g_hist, b_hist])
 
+
 #Calculate average Wasserstein distance for sequence of images
-def get_avg_distance_seq(main_path, list_of_images, seq_len):
-    cache = dict()
-    cache_histograms = dict()
+#TODO: Add custom dynamics metrics
+#TODO: Modify to calculate k histograms only once, and then store values?
+def get_avg_distance(main_path: str, list_of_img_paths: List[str], seq_len):
+    if seq_len < 2:
+        raise Exception("Sequence length has to be greater or equal to 2")
+
+    histograms_cache = dict()
     distances = list()
 
-    if seq_len < 2:
-        print("Sequence length has to be greater or equal to 2")
-        return
-
-    for i in range(len(list_of_images) - seq_len + 1):
-        if not cache.keys():
+    for i in range(len(list_of_img_paths) - seq_len + 1):
+        if not histograms_cache.keys():
             for k in range(seq_len):
-                cache[k] = read_image(f"{main_path}{str(list_of_images[i+k])}.png")
+                histograms_cache[k] = generate_histogram(f"{main_path}{str(list_of_img_paths[i+k])}.png")
 
-        if str(i+seq_len-1) not in cache.keys():
-            cache[i+seq_len-1] = read_image(f"{main_path}{str(list_of_images[i+seq_len-1])}.png")
-        
-        if not cache_histograms.keys():
-            for key in cache.keys():
-                cache_histograms[key] = get_histograms(cache[key])
-
-        if str(i+seq_len-1) not in cache_histograms.keys():
-            cache_histograms[i+seq_len-1] = get_histograms(cache[i+seq_len-1])
-
-        #print(f"iter: {i}; frames: {cache.keys()}")
+        if i+seq_len-1 not in histograms_cache.keys():
+            histograms_cache[i+seq_len-1] = generate_histogram(f"{main_path}{str(list_of_img_paths[i+seq_len-1])}.png")
 
         seq_avg_distance = 0.0
         
-        for key in cache_histograms.keys():
+        for key in histograms_cache.keys():
             next_key = key + 1
-            if next_key not in cache_histograms.keys():
+            if next_key not in histograms_cache.keys():
                 break
             
             avg_distance = 0.0
+            n_channels = histograms_cache[key][0].shape[2]
 
-            for j in range(NUM_CHANNELS):
-                avg_distance += (wasserstein_distance(cache_histograms[key][j], cache_histograms[next_key][j]))/NUM_CHANNELS
+            for j in range(n_channels):
+                avg_distance += (wasserstein_distance(histograms_cache[key][j], histograms_cache[next_key][j]))/n_channels
             
             seq_avg_distance += avg_distance/(seq_len-1)
-        
-        del cache[i]
-        del cache_histograms[i]
-        distances.append(seq_avg_distance)
+    
+    del histograms_cache[i]
+    distances.append(seq_avg_distance)
 
-    return distances
+    return np.array(distances)
 
 #Find original frames given result index
 def find_org_frames(main_path, list_of_images, 
