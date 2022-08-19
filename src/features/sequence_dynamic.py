@@ -59,20 +59,20 @@ def generate_histogram(path: str) -> np.ndarray:
 #Calculate average Wasserstein distance for sequence of images
 #TODO: Add custom dynamics metrics
 #TODO: Modify to calculate k histograms only once, and then store values?
-def get_avg_distance(main_path: str, list_of_img_paths: List[str], seq_len):
+def get_avg_distance(list_of_images_in_path: List[str], seq_len: int) -> np.ndarray:
     if seq_len < 2:
         raise Exception("Sequence length has to be greater or equal to 2")
 
     histograms_cache = dict()
     distances = list()
 
-    for i in range(len(list_of_img_paths) - seq_len + 1):
+    for i in range(len(list_of_images_in_path) - seq_len + 1):
         if not histograms_cache.keys():
             for k in range(seq_len):
-                histograms_cache[k] = generate_histogram(f"{main_path}{str(list_of_img_paths[i+k])}.png")
+                histograms_cache[k] = generate_histogram(list_of_images_in_path[i+k])
 
         if i+seq_len-1 not in histograms_cache.keys():
-            histograms_cache[i+seq_len-1] = generate_histogram(f"{main_path}{str(list_of_img_paths[i+seq_len-1])}.png")
+            histograms_cache[i+seq_len-1] = generate_histogram(list_of_images_in_path[i+seq_len-1])
 
         seq_avg_distance = 0.0
         
@@ -82,7 +82,7 @@ def get_avg_distance(main_path: str, list_of_img_paths: List[str], seq_len):
                 break
             
             avg_distance = 0.0
-            n_channels = histograms_cache[key][0].shape[2]
+            n_channels = histograms_cache[key].shape[0]
 
             for j in range(n_channels):
                 avg_distance += (wasserstein_distance(histograms_cache[key][j], histograms_cache[next_key][j]))/n_channels
@@ -95,20 +95,19 @@ def get_avg_distance(main_path: str, list_of_img_paths: List[str], seq_len):
     return np.array(distances)
 
 #Find original frames given result index
-def find_org_frames(main_path, list_of_images, 
-                    result_index, seq_len):
+def find_org_frames(list_of_images, result_index, seq_len):
 
     frame_paths = list()
 
     for i in range(result_index, result_index + seq_len):
-        frame_paths.append(main_path + str(list_of_images[i]) + '.png')
+        frame_paths.append(list_of_images[i])
 
 
     return frame_paths
 
 
 # Save result for given seq as: seq_data-seq_len.npy
-def save_avg_distance_seq(seq_len, main_path):
+def save_avg_distance_seq(main_path, seq_len):
     results_main_path = "../../../../DeepFake_Detection/wilddeep_results/"
     results_path = copy.copy(results_main_path)
 
@@ -117,25 +116,25 @@ def save_avg_distance_seq(seq_len, main_path):
     split_seq_path = split_seq_path[::-1]
 
     for part in split_seq_path:
-        results_path = results_path + part + "\\"
+        results_path = results_path + part + "/"
     
     os.makedirs(results_path, exist_ok = True)
     
 
     list_of_images = os.listdir(main_path)
     list_of_images = sorted([int(x.replace('.png', '')) for x in list_of_images])
+    list_of_images = [main_path.replace("\\", "/") + str(img) + ".png" for img in list_of_images]
     
-    distances = get_avg_distance_seq(main_path, list_of_images, seq_len)
-    distances = np.array(distances)
+    distances = get_avg_distance(main_path, list_of_images, seq_len)
 
     idx_paths_pairs = {idx: find_org_frames(main_path, list_of_images, idx, seq_len) 
                        for idx in range(distances.shape[0])}
 
     
-    with open(f"{results_path}\\seq_data-{seq_len}.npy", 'wb') as f:
+    with open(f"{results_path}/seq_data-{seq_len}.npy", 'wb') as f:
         np.save(f, distances)
     
-    with open(f"{results_path}\\idx_frames-{seq_len}.npy", 'wb') as f:
+    with open(f"{results_path}/idx_frames-{seq_len}.npy", 'wb') as f:
         pickle.dump(idx_paths_pairs, f)
 
 
