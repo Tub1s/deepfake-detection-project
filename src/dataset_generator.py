@@ -11,7 +11,7 @@ def get_list_of_data_paths(main_paths: List[str]) -> List:
     paths = list()
     
     for main_path in main_paths:
-        sub_paths = glob.glob(main_path + "*\\")
+        sub_paths = glob.glob(main_path + "*/")
         paths += sub_paths
 
     return paths

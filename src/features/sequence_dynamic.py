@@ -59,20 +59,21 @@ def generate_histogram(path: str) -> np.ndarray:
 #Calculate average Wasserstein distance for sequence of images
 #TODO: Add custom dynamics metrics
 #TODO: Modify to calculate k histograms only once, and then store values?
-def get_avg_distance(list_of_images_in_path: List[str], seq_len: int) -> np.ndarray:
+#TODO: Return pd.DataFrame with cols: [vid_num, seq_num, first_frame, seq_len, img_type, feature1, ... featuren]
+def generate_features(list_of_image_paths: List[str], seq_len: int) -> np.ndarray:
     if seq_len < 2:
         raise Exception("Sequence length has to be greater or equal to 2")
 
     histograms_cache = dict()
     distances = list()
 
-    for i in range(len(list_of_images_in_path) - seq_len + 1):
+    for i in range(len(list_of_image_paths) - seq_len + 1):
         if not histograms_cache.keys():
             for k in range(seq_len):
-                histograms_cache[k] = generate_histogram(list_of_images_in_path[i+k])
+                histograms_cache[k] = generate_histogram(list_of_image_paths[i+k])
 
         if i+seq_len-1 not in histograms_cache.keys():
-            histograms_cache[i+seq_len-1] = generate_histogram(list_of_images_in_path[i+seq_len-1])
+            histograms_cache[i+seq_len-1] = generate_histogram(list_of_image_paths[i+seq_len-1])
 
         seq_avg_distance = 0.0
         
@@ -95,12 +96,11 @@ def get_avg_distance(list_of_images_in_path: List[str], seq_len: int) -> np.ndar
     return np.array(distances)
 
 #Find original frames given result index
-def find_org_frames(list_of_images, result_index, seq_len):
-
+def find_org_frames(list_of_image_paths: List[str], result_index: int, sequence_length: int):
     frame_paths = list()
 
-    for i in range(result_index, result_index + seq_len):
-        frame_paths.append(list_of_images[i])
+    for i in range(result_index, result_index + sequence_length):
+        frame_paths.append(list_of_image_paths[i])
 
 
     return frame_paths
@@ -121,13 +121,13 @@ def save_avg_distance_seq(main_path, seq_len):
     os.makedirs(results_path, exist_ok = True)
     
 
-    list_of_images = os.listdir(main_path)
-    list_of_images = sorted([int(x.replace('.png', '')) for x in list_of_images])
-    list_of_images = [main_path.replace("\\", "/") + str(img) + ".png" for img in list_of_images]
+    list_of_image_paths = os.listdir(main_path)
+    list_of_image_paths = sorted([int(x.replace('.png', '')) for x in list_of_image_paths])
+    list_of_image_paths = [main_path.replace("\\", "/") + str(img) + ".png" for img in list_of_image_paths]
     
-    distances = get_avg_distance(main_path, list_of_images, seq_len)
+    distances = generate_features(list_of_image_paths, seq_len)
 
-    idx_paths_pairs = {idx: find_org_frames(main_path, list_of_images, idx, seq_len) 
+    idx_paths_pairs = {idx: find_org_frames(list_of_image_paths, idx, seq_len) 
                        for idx in range(distances.shape[0])}
 
     

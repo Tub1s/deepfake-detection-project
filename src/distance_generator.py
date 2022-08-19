@@ -1,13 +1,7 @@
-import features.sequence_dynamic as seq_dyn
-import os
-import matplotlib.pyplot as plt
-from pathlib import Path
-import copy
-import tqdm
 import glob
 import multiprocessing
+import features.sequence_dynamic as seq_dyn
 from functools import partial
-import features.paths
 
 def main():
     fake_main_paths = glob.glob("../../../DeepFake_Detection/WILDDEEP_DATA/fake_test/*/fake/")
