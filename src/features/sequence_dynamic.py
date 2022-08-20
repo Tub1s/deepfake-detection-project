@@ -7,7 +7,13 @@ import pickle
 from pathlib import Path
 import copy
 import cv2 as cv
-from typing import List
+from typing import List, Union
+from collections import deque
+import pandas as pd
+
+SMALL_CONST = 1e-10
+FEATURE_GENERATORS = [wasserstein_distance]
+FEATURE_GENERATORS = {generator.__name__ for generator in FEATURE_GENERATORS}
 
 #TODO: Add exception handling
 def generate_histogram(path: str) -> np.ndarray:
@@ -49,9 +55,10 @@ def generate_histogram(path: str) -> np.ndarray:
     r_hist = np.ravel(cv.calcHist(bgr_planes, [2], None, [bins], histRange, accumulate=accumulate))
     
     # Converting counts to frequencies
-    b_hist = b_hist/b_hist.sum()
-    g_hist = g_hist/g_hist.sum()
-    r_hist = r_hist/r_hist.sum()
+    # Adding small const to avoid problem with log() calculation for zeros
+    b_hist = (b_hist/b_hist.sum()) + SMALL_CONST
+    g_hist = (g_hist/g_hist.sum()) + SMALL_CONST
+    r_hist = (r_hist/r_hist.sum()) + SMALL_CONST
         
     return np.array([r_hist, g_hist, b_hist])
 
@@ -60,38 +67,61 @@ def generate_histogram(path: str) -> np.ndarray:
 #TODO: Add custom dynamics metrics
 #TODO: Modify to calculate k histograms only once, and then store values?
 #TODO: Return pd.DataFrame with cols: [vid_num, seq_num, first_frame, seq_len, img_type, feature1, ... featuren]
-def generate_features(list_of_image_paths: List[str], seq_len: int) -> np.ndarray:
+def generate_features(list_of_image_paths: List[str], seq_len: int, 
+                      feature_type: Union[str, List[str]]) -> np.ndarray:
     if seq_len < 2:
         raise Exception("Sequence length has to be greater or equal to 2")
 
+    if not set(feature_type).issubset(set(FEATURE_GENERATORS.keys())):
+        raise Exception(f"Unknown features {list(set(feature_type) - set(FEATURE_GENERATORS.keys()))}.")
+
     histograms_cache = dict()
     distances = list()
+    img_indices = deque()
+
+    sequence = list_of_image_paths[0].split("/")[-2]
+    sample_type = list_of_image_paths[0].split("/")[-3]
+    video = list_of_image_paths[0].split("/")[-4]
+    dataset_subset = list_of_image_paths[0].split("/")[-5].split("_")[1]
 
     for i in range(len(list_of_image_paths) - seq_len + 1):
         if not histograms_cache.keys():
             for k in range(seq_len):
+                img_indices.append(int(list_of_image_paths[i+k].split("/")[-1].replace(".png", "")))
                 histograms_cache[k] = generate_histogram(list_of_image_paths[i+k])
 
         if i+seq_len-1 not in histograms_cache.keys():
+            img_indices.append(int(list_of_image_paths[i+seq_len-1].split("/")[-1].replace(".png", "")))
             histograms_cache[i+seq_len-1] = generate_histogram(list_of_image_paths[i+seq_len-1])
-
-        seq_avg_distance = 0.0
         
-        for key in histograms_cache.keys():
-            next_key = key + 1
-            if next_key not in histograms_cache.keys():
-                break
-            
-            avg_distance = 0.0
-            n_channels = histograms_cache[key].shape[0]
+        first_frame = img_indices.popleft()   
+        sample_data = {"subset": dataset_subset,
+                       "type": sample_type,
+                       "video": video,
+                       "sequence": sequence,
+                       "first_frame": first_frame,
+                       "sequence_length": seq_len
+        }
 
-            for j in range(n_channels):
-                avg_distance += (wasserstein_distance(histograms_cache[key][j], histograms_cache[next_key][j]))/n_channels
-            
-            seq_avg_distance += avg_distance/(seq_len-1)
-    
-    del histograms_cache[i]
-    distances.append(seq_avg_distance)
+        for feature in feature_type:
+            sequence_average_feature = 0.0
+            for key in histograms_cache.keys():
+                next_key = key + 1
+                if next_key not in histograms_cache.keys():
+                    break
+                
+                average_feature = 0.0
+                n_channels = histograms_cache[key].shape[0]
+
+                for j in range(n_channels):
+                    average_feature += (FEATURE_GENERATORS[feature](histograms_cache[key][j], histograms_cache[next_key][j]))/n_channels
+                
+                sequence_average_feature += average_feature/(seq_len-1)
+        
+            sample_data[feature] = sequence_average_feature
+        
+        distances.append(pd.Series(sample_data))
+        del histograms_cache[i]  
 
     return np.array(distances)
 
