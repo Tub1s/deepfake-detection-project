@@ -11,9 +11,18 @@ from typing import List, Union
 from collections import deque
 import pandas as pd
 
+# calculate the kl divergence (is not symmetrical) requires non-zero inputs in distributions
+def kl_divergence(p, q):
+    return sum(p[i] * math.log2(p[i]/q[i]) for i in range(len(p)))
+ 
+# calculate the js divergence (is symmetrical)
+def js_divergence(p, q):
+    m = 0.5 * (p + q)
+    return 0.5 * kl_divergence(p, m) + 0.5 * kl_divergence(q, m)
+
 SMALL_CONST = 1e-10
-FEATURE_GENERATORS = [wasserstein_distance]
-FEATURE_GENERATORS = {generator.__name__ for generator in FEATURE_GENERATORS}
+FEATURE_GENERATORS = [wasserstein_distance, kl_divergence, js_divergence]
+FEATURE_GENERATORS = {generator.__name__: generator for generator in FEATURE_GENERATORS}
 
 #TODO: Add exception handling
 def generate_histogram(path: str) -> np.ndarray:
@@ -35,13 +44,12 @@ def generate_histogram(path: str) -> np.ndarray:
     
     n_channels = image.shape[2]
 
-    if not (n_channels == 1) or (n_channels == 3):
-        raise Exception("Incorrect number of channels in image. \
-                         Single or triple channel image required.")
+    if not ((n_channels == 1) or (n_channels == 3)):
+        raise Exception(f"Incorrect number of channels ({n_channels}) in image. Single or triple channel image required.")
 
 
     # Grayscale image case
-    if not n_channels == 3:
+    if n_channels == 1:
         hist = np.ravel(cv.calcHist(image, [0], None, [bins], histRange, accumulate=accumulate))
         return hist/hist.sum()
 
@@ -63,117 +71,113 @@ def generate_histogram(path: str) -> np.ndarray:
     return np.array([r_hist, g_hist, b_hist])
 
 
-#Calculate average Wasserstein distance for sequence of images
-#TODO: Add custom dynamics metrics
 #TODO: Modify to calculate k histograms only once, and then store values?
-#TODO: Return pd.DataFrame with cols: [vid_num, seq_num, first_frame, seq_len, img_type, feature1, ... featuren]
-def generate_features(list_of_image_paths: List[str], seq_len: int, 
-                      feature_type: Union[str, List[str]]) -> np.ndarray:
-    if seq_len < 2:
-        raise Exception("Sequence length has to be greater or equal to 2")
+def generate_features(list_of_image_paths: List[str], subsequence_length: int, 
+                      feature_type: Union[str, List[str]]) -> pd.DataFrame:
+    """
+    Given list of image paths calculates average values of chosen feature for subsequences of length n.
+    Available features: "wasserstein_distance", "kl_divergence", "js_divergence".
+
+    Args:
+        list_of_image_paths (List[str]): List of paths to the full video sequence
+        subsequence_length (int): Size of sliding window used in calculation of average dynamic within given sequence
+        feature_type (Union[str, List[str]]): "wasserstein_distance", "kl_divergence" or "js_divergence"
+
+    Raises:
+        Exception: Subsequence length has to be greater than one
+        Exception: Unknown feature type
+
+    Returns:
+        pd.DataFrame: DataFrame that containing most important informations about each sample such as:
+        dataset subset (train or test); sequence type (fake or real); video number based on formatted path;
+        sequence number within given video based on formatted path; first frame of the subsequence;
+        length of subsequence and calculated values of desired features.
+
+    """    
+    if not subsequence_length > 1:
+        raise Exception("Subsequence length has to be greater than 1")
+
+    if isinstance(feature_type, str):
+        feature_type = [feature_type]
 
     if not set(feature_type).issubset(set(FEATURE_GENERATORS.keys())):
-        raise Exception(f"Unknown features {list(set(feature_type) - set(FEATURE_GENERATORS.keys()))}.")
+        raise Exception(f"Unknown feature types {list(set(feature_type) - set(FEATURE_GENERATORS.keys()))}.")
 
-    histograms_cache = dict()
+    
+
+    # Initialize datastructures
+    histograms_cache = deque()
     distances = list()
-    img_indices = deque()
+    img_indices = deque() # Keeps track of images in sliding window
 
+    # Collect basic data about input path
+    # Requires predefined path in 
+    # ".../SAMPLE_TYPE-DATASET_SUBSET/VIDEO_NUMBER/SAMPLE_TYPE/SUBSEQUENCE_NUMBER/image.png" format
     sequence = list_of_image_paths[0].split("/")[-2]
     sample_type = list_of_image_paths[0].split("/")[-3]
     video = list_of_image_paths[0].split("/")[-4]
     dataset_subset = list_of_image_paths[0].split("/")[-5].split("_")[1]
 
-    for i in range(len(list_of_image_paths) - seq_len + 1):
-        if not histograms_cache.keys():
-            for k in range(seq_len):
+    for i in range(len(list_of_image_paths) - subsequence_length + 1):
+        # On first loop generate and cache histograms for further re-use
+        if len(histograms_cache) == 0:
+            for k in range(subsequence_length):
                 img_indices.append(int(list_of_image_paths[i+k].split("/")[-1].replace(".png", "")))
-                histograms_cache[k] = generate_histogram(list_of_image_paths[i+k])
+                histograms_cache.append(generate_histogram(list_of_image_paths[i+k]))
 
-        if i+seq_len-1 not in histograms_cache.keys():
-            img_indices.append(int(list_of_image_paths[i+seq_len-1].split("/")[-1].replace(".png", "")))
-            histograms_cache[i+seq_len-1] = generate_histogram(list_of_image_paths[i+seq_len-1])
+        # Generate required histograms after initial loop
+        if len(histograms_cache) < subsequence_length:
+            img_indices.append(int(list_of_image_paths[i+subsequence_length-1].split("/")[-1].replace(".png", "")))
+            histograms_cache.append(generate_histogram(list_of_image_paths[i+subsequence_length-1]))
         
-        first_frame = img_indices.popleft()   
+        # Prepare dictionary for current subsequence
+        first_frame = img_indices.popleft()  # Remove current first image from the queue 
         sample_data = {"subset": dataset_subset,
                        "type": sample_type,
                        "video": video,
                        "sequence": sequence,
                        "first_frame": first_frame,
-                       "sequence_length": seq_len
+                       "subsequence_length": subsequence_length
         }
 
         for feature in feature_type:
-            sequence_average_feature = 0.0
-            for key in histograms_cache.keys():
-                next_key = key + 1
-                if next_key not in histograms_cache.keys():
-                    break
-                
-                average_feature = 0.0
-                n_channels = histograms_cache[key].shape[0]
+            subsequence_average_feature = 0.0
 
+            # Calculate average feature value for next pair of images
+            for i in range(subsequence_length - 1):
+                average_feature = 0.0
+                n_channels = histograms_cache[0].shape[0]
+
+                # Calculate average feature value for corresponding channels
                 for j in range(n_channels):
-                    average_feature += (FEATURE_GENERATORS[feature](histograms_cache[key][j], histograms_cache[next_key][j]))/n_channels
+                    average_feature += (FEATURE_GENERATORS[feature](histograms_cache[i][j], histograms_cache[i+1][j]))/n_channels
                 
-                sequence_average_feature += average_feature/(seq_len-1)
+                subsequence_average_feature += average_feature/(subsequence_length-1)
         
-            sample_data[feature] = sequence_average_feature
+            sample_data[feature] = subsequence_average_feature
         
         distances.append(pd.Series(sample_data))
-        del histograms_cache[i]  
+        histograms_cache.popleft() # Remove leftmost histogram from queue
 
-    return np.array(distances)
-
-#Find original frames given result index
-def find_org_frames(list_of_image_paths: List[str], result_index: int, sequence_length: int):
-    frame_paths = list()
-
-    for i in range(result_index, result_index + sequence_length):
-        frame_paths.append(list_of_image_paths[i])
-
-
-    return frame_paths
+    return pd.DataFrame(distances)
 
 
 # Save result for given seq as: seq_data-seq_len.npy
-def save_avg_distance_seq(main_path, seq_len):
-    results_main_path = "../../../../DeepFake_Detection/wilddeep_results/"
-    results_path = copy.copy(results_main_path)
-
-    split_seq_path = Path(main_path).parts[::-1]
+def save_avg_distance_seq(data_path: str, save_path: str, sequence_length: int, feature_type: Union[str, List[str]]):
+    split_seq_path = Path(data_path).parts[::-1]
     split_seq_path = split_seq_path[0:4]
     split_seq_path = split_seq_path[::-1]
 
     for part in split_seq_path:
-        results_path = results_path + part + "/"
+        save_path = save_path + part + "/"
     
-    os.makedirs(results_path, exist_ok = True)
+    os.makedirs(save_path, exist_ok = True)
     
-
-    list_of_image_paths = os.listdir(main_path)
+    list_of_image_paths = os.listdir(data_path)
     list_of_image_paths = sorted([int(x.replace('.png', '')) for x in list_of_image_paths])
-    list_of_image_paths = [main_path.replace("\\", "/") + str(img) + ".png" for img in list_of_image_paths]
+    list_of_image_paths = [data_path.replace("\\", "/") + str(img) + ".png" for img in list_of_image_paths]
     
-    distances = generate_features(list_of_image_paths, seq_len)
+    distances = generate_features(list_of_image_paths, sequence_length, feature_type)
 
-    idx_paths_pairs = {idx: find_org_frames(list_of_image_paths, idx, seq_len) 
-                       for idx in range(distances.shape[0])}
-
-    
-    with open(f"{results_path}/seq_data-{seq_len}.npy", 'wb') as f:
-        np.save(f, distances)
-    
-    with open(f"{results_path}/idx_frames-{seq_len}.npy", 'wb') as f:
-        pickle.dump(idx_paths_pairs, f)
-
-
-# calculate the kl divergence (is not symmetrical) requires non-zero inputs in distributions
-def kl_divergence(p, q):
-    return sum(p[i] * math.log2(p[i]/q[i]) for i in range(len(p)))
- 
-# calculate the js divergence (is symmetrical)
-def js_divergence(p, q):
-    m = 0.5 * (p + q)
-    return 0.5 * kl_divergence(p, m) + 0.5 * kl_divergence(q, m)
-
+    with open(save_path + f"subsequence_data-{sequence_length}.pkl", 'wb') as f:
+        pickle.dump(distances, f)
