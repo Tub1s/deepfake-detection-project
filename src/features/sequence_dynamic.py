@@ -10,18 +10,20 @@ import cv2 as cv
 from typing import List, Union
 from collections import deque
 import pandas as pd
+from scipy.special import rel_entr
+from scipy.spatial.distance import jensenshannon
 
 # calculate the kl divergence (is not symmetrical) requires non-zero inputs in distributions
-def kl_divergence(p, q):
-    return sum(p[i] * math.log2(p[i]/q[i]) for i in range(len(p)))
+# def kl_divergence(p, q): rel_entr
+#     return sum(p[i] * math.log2(p[i]/q[i]) for i in range(len(p)))
  
-# calculate the js divergence (is symmetrical)
-def js_divergence(p, q):
-    m = 0.5 * (p + q)
-    return 0.5 * kl_divergence(p, m) + 0.5 * kl_divergence(q, m)
+# # calculate the js divergence (is symmetrical)
+# def js_divergence(p, q): jensenshannon
+#     m = 0.5 * (p + q)
+#     return 0.5 * kl_divergence(p, m) + 0.5 * kl_divergence(q, m)
 
-SMALL_CONST = 1e-10
-FEATURE_GENERATORS = [wasserstein_distance, kl_divergence, js_divergence]
+SMALL_CONST = 1e-5
+FEATURE_GENERATORS = [wasserstein_distance, rel_entr, jensenshannon]
 FEATURE_GENERATORS = {generator.__name__: generator for generator in FEATURE_GENERATORS}
 
 #TODO: Add exception handling
@@ -71,17 +73,18 @@ def generate_histogram(path: str) -> np.ndarray:
     return np.array([r_hist, g_hist, b_hist])
 
 
-#TODO: Modify to calculate k histograms only once, and then store values?
+#TODO: Modify to calculate k histograms only once, and then use deque
+#! Fix problem with kl_div from scipy not returning scalar value
 def generate_features(list_of_image_paths: List[str], subsequence_length: int, 
                       feature_type: Union[str, List[str]]) -> pd.DataFrame:
     """
     Given list of image paths calculates average values of chosen feature for subsequences of length n.
-    Available features: "wasserstein_distance", "kl_divergence", "js_divergence".
+    Available features: "wasserstein_distance", "rel_entr", "jensenshannon".
 
     Args:
         list_of_image_paths (List[str]): List of paths to the full video sequence
         subsequence_length (int): Size of sliding window used in calculation of average dynamic within given sequence
-        feature_type (Union[str, List[str]]): "wasserstein_distance", "kl_divergence" or "js_divergence"
+        feature_type (Union[str, List[str]]): "wasserstein_distance", "rel_entr" or "jensenshannon"
 
     Raises:
         Exception: Subsequence length has to be greater than one
