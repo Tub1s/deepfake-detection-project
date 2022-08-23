@@ -154,6 +154,7 @@ cython_debug/
 
 # cusotm
 analysis/
-notebooks/
 old/
 saved_datasets/
+datasets/
+.ipynb_checkpoints
