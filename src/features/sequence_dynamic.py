@@ -165,8 +165,19 @@ def generate_features(list_of_image_paths: List[str], subsequence_length: int,
     return pd.DataFrame(distances)
 
 
-# Save result for given seq as: seq_data-seq_len.npy
-def save_avg_distance_seq(data_path: str, save_path: str, sequence_length: int, feature_type: Union[str, List[str]]):
+def save_avg_distance_seq(data_path: str, save_path: str, subsequence_length: int, feature_type: Union[str, List[str]]) -> None:
+    """
+    Runs feature generator and saves results to pickle-format files following original data_path structure.
+
+    Args:
+        data_path (str): Path to the single sequence of images
+        save_path (str): General save directory; script will generate folder structure following pattern of dataset
+        subsequence_length (int): Desired length of subsequence used in feature generator
+        feature_type (Union[str, List[str]]): Indicates features to calculate in feature generator. Currently available features are 'wasserstein_distance', 'jensenshannon' and 'kl_divergence'.
+
+    Returns:
+        None
+    """    
     split_seq_path = Path(data_path).parts[::-1]
     split_seq_path = split_seq_path[0:4]
     split_seq_path = split_seq_path[::-1]
@@ -180,7 +191,7 @@ def save_avg_distance_seq(data_path: str, save_path: str, sequence_length: int, 
     list_of_image_paths = sorted([int(x.replace('.png', '')) for x in list_of_image_paths])
     list_of_image_paths = [data_path.replace("\\", "/") + str(img) + ".png" for img in list_of_image_paths]
     
-    distances = generate_features(list_of_image_paths, sequence_length, feature_type)
+    distances = generate_features(list_of_image_paths, subsequence_length, feature_type)
 
-    with open(save_path + f"subsequence_data-{sequence_length}.pkl", 'wb') as f:
+    with open(save_path + f"subsequence_data-{subsequence_length}.pkl", 'wb') as f:
         pickle.dump(distances, f)

@@ -1,6 +1,6 @@
 import glob
 import multiprocessing
-import features.sequence_dynamic as seq_dyn
+from features.sequence_dynamic import save_avg_distance_seq
 from functools import partial
 
 def main():
@@ -17,7 +17,7 @@ def main():
             all_paths += real_sub_paths
     
     pool = multiprocessing.Pool()
-    pool.map(partial(seq_dyn.save_avg_distance_seq, 
+    pool.map(partial(save_avg_distance_seq, 
                      save_path=save_path, 
                      sequence_length=10, 
                      feature_type=["wasserstein_distance", "jensenshannon"]), all_paths)
