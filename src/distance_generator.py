@@ -7,7 +7,7 @@ def main():
     fake_main_paths = glob.glob("../../../DeepFake_Detection/WILDDEEP_DATA/fake_test/*/fake/")
     real_main_paths = glob.glob("../../../DeepFake_Detection/WILDDEEP_DATA/real_test/*/real/")
     save_path = "../../../DeepFake_Detection/wilddeep_results/"
-    all_paths = list()
+    all_paths = []
     for fake_main_path in fake_main_paths:
             fake_sub_paths = glob.glob(fake_main_path + "*\\")
             all_paths += fake_sub_paths

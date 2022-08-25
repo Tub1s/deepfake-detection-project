@@ -110,8 +110,8 @@ def generate_features(list_of_image_paths: List[str], subsequence_length: int,
 
     # Initialize datastructures
     histograms_cache = deque()
-    distances = list()
     img_indices = deque() # Keeps track of images in sliding window
+    distances = []
 
     # Collect basic data about input path
     # Requires predefined path in 

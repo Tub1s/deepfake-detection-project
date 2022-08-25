@@ -141,7 +141,7 @@ def load_model(model_path: str, checkpoint_path: str = None) -> tf.keras.Model:
 
 
 def batch_predict(X: np.ndarray, model: tf.keras.Model) -> List[List[float]]:
-    predictions = list()
+    predictions = []
     for batch in tqdm.tqdm(X):
         batch_predictions = model.predict(batch, verbose=0)
         predictions.append(batch_predictions)
@@ -209,10 +209,10 @@ def generate_statistics(y_true: List[int], y_pred: List[int], save_path: str, na
 
 def run_original_experiment(data_paths: List[str], model_paths: List[str], number_of_samples: int = 5, seeds: List[int] = 1, inf_type: str = "default"):
     
-    all_accs = list()
-    all_prec = list()
-    all_sens = list()
-    all_spec = list()
+    all_accs = []
+    all_prec = []
+    all_sens = []
+    all_spec = []
 
     main_save_path = "../results/random/" 
     # model_name = model_paths[0].split("\\")[-1].split("_")[1]
